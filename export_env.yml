@@ -22,8 +22,7 @@
         virtualenv: "{{ venv_path }}"
         virtualenv_command: python3 -m venv
 
-
-- name: Export flavor, image and keypair info
+- name: Export flavor, image, keypair and security group info
   hosts: src_cloud
   vars_files:
     - src-vars.yml
@@ -34,12 +33,18 @@
         name: "{{ vm_name }}"
       register: vm_info
 
+    - name: Create directory to store yaml files
+      file:
+        path: /tmp/{{ vm_info.servers[0].name }}
+        state: directory
+        mode: '0755'
+
     - name: Save info to YAML file
       copy:
         content: "{{ vm_info | to_nice_yaml }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}-vm_info.yaml"
+        dest: "/tmp/{{ vm_info.servers[0].name }}/vm_info.yaml"
 
-    - name: Export flavor info
+    - name: Filter flavor info
       openstack.cloud.compute_flavor_info:
         auth: "{{ cloud_config.auth }}"
         name: "{{ vm_info.servers[0].flavor.name }}"
@@ -52,12 +57,12 @@
     - name: Save flavor info
       copy:
         content: "{{ flavor_info | to_nice_yaml }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}-flavor_info.yaml"
+        dest: "/tmp/{{ vm_info.servers[0].name }}/flavor_info.yaml"
       when:
         - flavor_info is defined
         - not flavor_info.skipped | default(false)
 
-    - name: Export image info
+    - name: Filter image info
       openstack.cloud.image_info:
         auth: "{{ cloud_config.auth }}"
         name: "{{ vm_info.servers[0].image.name }}"
@@ -71,12 +76,12 @@
     - name: Save image info
       copy:
         content: "{{ image_info | to_nice_yaml }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}-image_info.yaml"
+        dest: "/tmp/{{ vm_info.servers[0].name }}/image_info.yaml"
       when:
         - image_info is defined
         - not image_info.skipped | default(false)
 
-    - name: Export key pair
+    - name: Filter keypair info
       openstack.cloud.keypair_info:
         auth: "{{ cloud_config.auth }}"
         name: "{{ vm_info.servers[0].key_name }}"
@@ -90,13 +95,38 @@
     - name: Save keypair info
       copy:
         content: "{{ keypair_info | to_nice_yaml }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}-keypair_info.yaml"
+        dest: "/tmp/{{ vm_info.servers[0].name }}/keypair_info.yaml"
       when:
         - keypair_info is defined
         - not keypair_info.skipped | default(false)
 
+    - name: Filter security groups matched
+      openstack.cloud.security_group_info:
+        auth: "{{ cloud_config.auth }}"
+        name: "{{ item.name }}"
+      loop: "{{vm_info.servers[0].security_groups}}"
+      register: sg_filtered_results
+      when:
+        - vm_info.servers[0].security_groups is defined
+        - vm_info.servers[0].security_groups | length > 0
+    
+    - name: Merge filtered results
+      set_fact:
+        security_group_info:
+          security_groups: "{{ sg_filtered_results.results | map(attribute='security_groups') | flatten | unique}}"
+      when:
+        - not sg_filtered_results.skipped | default(false)
 
-- name: Export networking components info
+    - name: Save security group info
+      copy:
+        content: "{{ security_group_info | to_nice_yaml(indent=2) }}"
+        dest: "/tmp/{{ vm_info.servers[0].name }}/security_group_info.yaml"
+      when:
+        - security_group_info is defined
+        - not security_group_info.skipped | default(false)
+
+
+- name: Export network components info
   hosts: src_cloud
   vars_files:
     - src-vars.yml
@@ -107,149 +137,157 @@
         name: "{{ vm_name }}"
       register: vm_info
 
-    - name: Extract VM mac address for filtering port
+    - name: Extract all MAC addresses from all networks
       set_fact:
-        vm_mac_address: "{{ vm_info.servers[0].addresses.internal[0]['OS-EXT-IPS-MAC:mac_addr'] }}"
-      when:
-        - vm_info.servers[0].addresses.internal is defined
-        - vm_info.servers[0].addresses.internal | length > 0
+        vm_mac_addresses: >-
+          {{ (vm_mac_addresses | default([])) 
+            | union([item.1['OS-EXT-IPS-MAC:mac_addr']]) }}
+      with_subelements:
+        - "{{ vm_info.servers[0].addresses | dict2items }}"
+        - value
 
-    - name: Filter port matched
+    - name: Filter all ports matched with respective MAC addresses
       openstack.cloud.port_info:
         auth: "{{ cloud_config.auth }}"
         filters:
-          mac_address: "{{ vm_mac_address }}"
+          mac_address: "{{ item }}"
           status: ACTIVE
-      register: port_info
-      when: vm_mac_address is defined
+      loop: "{{ vm_mac_addresses }}"
+      register: port_filtered_results
+      when:
+        - vm_mac_addresses is defined
+        - vm_mac_addresses | length > 0
 
-    - name: Filter network matched
+    - name: Merge filtered results
+      set_fact:
+        ports_info: "{{ port_filtered_results.results | map(attribute='ports') | flatten | unique }}"
+      when:
+        - not port_filtered_results.skipped | default(false)
+    
+    - name: Filter floating ips attached with respective fixed ip
+      openstack.cloud.floating_ip_info:
+        auth: "{{ cloud_config.auth }}"
+        fixed_ip_address: "{{ item.fixed_ips[0].ip_address }}"
+      loop: "{{ports_info}}"
+      register: fip_filtered_results
+      when:
+        - ports_info is defined
+        - ports_info | length > 0
+
+    - name: Merge filtered results
+      set_fact:
+        floating_ips_info:
+          floating_ips: "{{ fip_filtered_results.results | map(attribute='floating_ips') | flatten | unique }}"
+      when:
+        - fip_filtered_results is defined
+        - fip_filtered_results | length > 0
+
+    - name: Save floating ips info
+      copy:
+        content: "{{ floating_ips_info | to_nice_yaml(indent=2) }}"
+        dest: "/tmp/{{ vm_info.servers[0].name }}/floating_ips_info.yaml"
+      when:
+        - floating_ips_info is defined
+        - floating_ips_info.floating_ips | length > 0
+        - not floating_ips_info.skipped | default(false)
+
+    - name: Filter networks matched with respective port
       openstack.cloud.networks_info:
         auth: "{{ cloud_config.auth }}"
         filters:
-          id: "{{ port_info.ports[0].network_id }}"
-      register: networks_info
+          id: "{{ item.network_id }}"
+      loop: "{{ports_info}}"
+      register: networks_filtered_results
       when:
-        - port_info.ports is defined
-        - port_info.ports | length > 0
+        - ports_info is defined
+        - ports_info | length > 0
+    
+    - name: Filter floating ip network matched with respective floating ip
+      openstack.cloud.networks_info:
+        auth: "{{ cloud_config.auth }}"
+        filters:
+          id: "{{ item.floating_network_id }}"
+      loop: "{{floating_ips_info.floating_ips}}"
+      register: fip_network_filtered_results
+      when:
+        - floating_ips_info is defined
+        - floating_ips_info.floating_ips is defined
+        - floating_ips_info.floating_ips | length > 0
+
+    - name: Merge all filtered networks
+      set_fact:
+        networks_info:
+          networks: >-
+            {{
+              (
+                (networks_filtered_results.results | map(attribute='networks') | flatten | unique | default([]))
+                +
+                (fip_network_filtered_results.results | map(attribute='networks') | flatten | unique | default([]))
+              )
+            }}
+      when:
+        - networks_filtered_results is defined
+        - fip_network_filtered_results is defined
 
     - name: Save networks info
       copy:
-        content: "{{ networks_info | to_nice_yaml }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}-networks_info.yaml"
+        content: "{{ networks_info | to_nice_yaml(indent=2) }}"
+        dest: "/tmp/{{ vm_info.servers[0].name }}/networks_info.yaml"
       when:
         - networks_info is defined
         - not networks_info.skipped | default(false)
 
-    - name: Filter subnets matched
+    - name: Filter subnets matched with respective network
       openstack.cloud.subnets_info:
         auth: "{{ cloud_config.auth }}"
         filters:
-          id: "{{ port_info.ports[0].fixed_ips[0].subnet_id }}"
-      register: subnets_info
+          id: "{{ item.1 }}"
+      loop: "{{ networks_info.networks | subelements('subnet_ids') }}"
+      register: subnets_filtered_results
       when:
-        - port_info.ports is defined
-        - port_info.ports | length > 0
-        - port_info.ports[0].fixed_ips is defined
-        - port_info.ports[0].fixed_ips | length > 0
+        - networks_info is defined
+        - networks_info.networks is defined
+        - networks_info.networks | length > 0
+
+    - name: Merge filtered results
+      set_fact:
+        subnets_info:
+          subnets: "{{(subnets_filtered_results.results | map(attribute='subnets') | flatten | unique | default([]))}}"
+      when:
+        - subnets_filtered_results is defined
+        - subnets_filtered_results | length > 0
 
     - name: Save subnets info
       copy:
-        content: "{{ subnets_info | to_nice_yaml }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}-subnets_info.yaml"
+        content: "{{ subnets_info | to_nice_yaml(indent=2) }}"
+        dest: "/tmp/{{ vm_info.servers[0].name }}/subnets_info.yaml"
       when:
         - subnets_info is defined
         - not subnets_info.skipped | default(false)
 
-    - name: Filter floating ip attached
-      openstack.cloud.floating_ip_info:
-        auth: "{{ cloud_config.auth }}"
-        fixed_ip_address: "{{ vm_info.servers[0].addresses.internal[0].addr }}"
-      register: floating_ip_info
-      when:
-        - vm_info.servers[0].addresses.internal is defined
-        - vm_info.servers[0].addresses.internal | length > 0
-        - vm_info.servers[0].addresses.internal[0].addr is defined
-
-    - name: Save floating ip info
-      copy:
-        content: "{{ floating_ip_info | to_nice_yaml }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}-floating_ip_info.yaml"
-      when:
-        - floating_ip_info is defined
-        - floating_ip_info.floating_ips | length > 0
-        - not floating_ip_info.skipped | default(false)
-
-    - name: Filter floating ip network matched
-      openstack.cloud.networks_info:
-        auth: "{{ cloud_config.auth }}"
-        filters:
-          id: "{{ floating_ip_info.floating_ips[0].floating_network_id }}"
-      register: floating_ip_network_info
-      when:
-        - floating_ip_info.floating_ips is defined
-        - floating_ip_info.floating_ips | length > 0
-
-    - name: Save floating ip network info
-      copy:
-        content: "{{ floating_ip_network_info | to_nice_yaml }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}-floating_ip_network_info.yaml"
-      when:
-        - floating_ip_network_info is defined
-        - not floating_ip_network_info.skipped | default(false)
-
-    - name: Filter floating ip subnets matched
-      openstack.cloud.subnets_info:
-        auth: "{{ cloud_config.auth }}"
-        filters:
-          id: "{{ floating_ip_network_info.networks[0].subnet_ids[0] }}"
-      register: floating_ip_subnets_info
-      when:
-        - floating_ip_network_info.networks is defined
-        - floating_ip_network_info.networks | length > 0
-        - floating_ip_network_info.networks[0].subnet_ids is defined
-        - floating_ip_network_info.networks[0].subnet_ids | length > 0
-
-    - name: Save floating ip subnets info
-      copy:
-        content: "{{ floating_ip_subnets_info | to_nice_yaml }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}-floating_ip_subnets_info.yaml"
-      when:
-        - floating_ip_subnets_info is defined
-        - not floating_ip_subnets_info.skipped | default(false)
-
-    - name: Filter router matched
+    - name: Filter router matched with respective floating ip
       openstack.cloud.routers_info:
         auth: "{{ cloud_config.auth }}"
         filters:
-          id: "{{ floating_ip_info.floating_ips[0].router_id }}"
-      register: router_info
+          id: "{{ item.router_id }}"
+      loop: "{{floating_ips_info.floating_ips}}"
+      register: routers_filtered_results
       when:
-        - floating_ip_info.floating_ips is defined
-        - floating_ip_info.floating_ips | length > 0
-        - floating_ip_info.floating_ips[0].router_id is defined
+        - floating_ips_info.floating_ips is defined
+        - floating_ips_info.floating_ips | length > 0
+
+    - name: Merge filtered results
+      set_fact:
+        routers_info:
+          routers: "{{ routers_filtered_results.results | map(attribute='routers') | flatten | unique }}"
+      when:
+        - routers_filtered_results is defined
+        - routers_filtered_results | length > 0
 
     - name: Save router info
       copy:
-        content: "{{ router_info | to_nice_yaml }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}-router_info.yaml"
+        content: "{{ routers_info | to_nice_yaml(indent=2) }}"
+        dest: "/tmp/{{ vm_info.servers[0].name }}/routers_info.yaml"
       when:
-        - router_info is defined
-        - not router_info.skipped | default(false)
-
-    - name: Filter security groups matched
-      openstack.cloud.security_group_info:
-        auth: "{{ cloud_config.auth }}"
-        name: "{{ vm_info.servers[0].security_groups[0].name }}"
-      register: security_group_info
-      when:
-        - vm_info.servers[0].security_groups is defined
-        - vm_info.servers[0].security_groups | length > 0
-
-    - name: Save security group info
-      copy:
-        content: "{{ security_group_info | to_nice_yaml }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}-security_group_info.yaml"
-      when:
-        - security_group_info is defined
-        - not security_group_info.skipped | default(false)
+        - routers_info is defined
+        - not routers_info.skipped | default(false)
