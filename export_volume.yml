@@ -1,0 +1,111 @@
+- name: Prepare venv and install openstacksdk
+  hosts: src_cloud
+  vars_files:
+    - playbook-vars.yml
+  tasks:
+    - name: Ensure python3-venv and pip are installed
+      apt:
+        name:
+          - python3-venv
+          - python3-pip
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Create Python virtual environment if not exists
+      command: "python3 -m venv {{ venv_path }}"
+      args:
+        creates: "{{ venv_path }}/bin/activate"
+    
+    - name: Access CLI to project
+      shell: ". {{ openstack_path }}/admin-openrc.sh"
+      args:
+        executable: /bin/bash
+
+    - name: Ensure openstacksdk is installed in virtualenv
+      ansible.builtin.pip:
+        name: openstacksdk
+        virtualenv: "{{ venv_path }}"
+        virtualenv_command: python3 -m venv
+
+- name: Export VM details
+  hosts: src_cloud
+  vars_files:
+    - playbook-vars.yml
+    - src-vars.yml
+  vars:
+    ansible_python_interpreter: "{{ venv_path }}/bin/python"
+  tasks:
+    - name: Shutdown the target VM
+      openstack.cloud.server_action:
+        auth: "{{ cloud_config.auth }}"
+        action: stop
+        server: "{{ vm_name }}"
+        timeout: 200
+    
+    - name: Get VM details
+      openstack.cloud.server_info:
+        auth: "{{ cloud_config.auth }}"
+        name: "{{ vm_name }}"
+      register: vm_info
+    
+    - name: Get network details
+      openstack.cloud.networks_info:
+        auth: "{{ cloud_config.auth }}"
+      register: network_info
+  
+- name: Detach volume from VM
+  hosts: src_cloud
+  vars_files:
+    - playbook-vars.yml
+    - src-vars.yml
+  vars:
+    ansible_python_interpreter: "{{ venv_path }}/bin/python"
+  tasks:
+    - name: Get VM details again
+      openstack.cloud.server_info:
+        auth: "{{ cloud_config.auth }}"
+        name: "{{ vm_name }}"
+      register: vm_info
+    
+    - name: Save VM info to file
+      copy:
+        dest: "/tmp/vm1_info.json"
+        content: "{{vm_info}}"
+    
+    - name: Extract VM mac address
+      set_fact:
+        vm_ip: "{{ vm_info.servers[0].addresses.internal[0].addr }}"
+
+    - name: filter port related to vm ip
+      openstack.cloud.port_info:
+        auth: "{{ cloud_config.auth }}"
+        filters:
+          mac_address: "fa:16:3e:93:40:70"
+          status: ACTIVE
+      register: port_info
+
+
+    # - name: Detach all volumes (ignore root volume errors)
+    #   openstack.cloud.server_volume:
+    #     auth: "{{ cloud_config.auth }}"
+    #     server: "{{ vm_name }}"
+    #     volume: "{{ item.id }}"
+    #     state: absent
+    #   loop: "{{ vm_info.servers[0].attached_volumes }}"
+    #   ignore_errors: true
+    #   register: detach_results
+    #   when: vm_info.servers[0].attached_volumes | length > 0
+
+    # - name: Create snapshot of OS volume
+    #   openstack.cloud.volume_snapshot:
+    #     auth: "{{ cloud_config.auth }}"
+    #     volume: "{{ vm_info.servers[0].attached_volumes[0].id }}"
+    #     name: "{{ vm_name }}-os-snapshot-{{ ansible_date_time.epoch }}"
+    #     description: "OS volume snapshot for VM migration"
+    #     force: true
+    #   register: os_snapshot
+    #   when: vm_info.servers[0].attached_volumes | length > 0
+    
+        
+
+

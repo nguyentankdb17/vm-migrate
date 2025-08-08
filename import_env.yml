@@ -1,0 +1,23 @@
+- name: Prepare venv and install openstacksdk
+  hosts: src_cloud
+  vars_files:
+    - playbook-vars.yml
+  tasks:
+    - name: Ensure python3-venv and pip are installed
+      apt:
+        name:
+          - python3-venv
+          - python3-pip
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Create Python virtual environment if not exists
+      command: "python3 -m venv {{ venv_path }}"
+      args:
+        creates: "{{ venv_path }}/bin/activate"
+
+    - name: Ensure openstacksdk is installed in virtualenv
+      ansible.builtin.pip:
+        name: openstacksdk
+        virtualenv: "{{ venv_path }}"
+        virtualenv_command: python3 -m venv

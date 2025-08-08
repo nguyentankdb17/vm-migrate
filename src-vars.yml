@@ -1,0 +1,14 @@
+vm_name: vm1
+venv_path: /home/nguyentan/venv
+ansible_python_interpreter: "{{ venv_path }}/bin/python"
+cloud_config: 
+  auth:
+    auth_url: http://10.10.0.254:5000
+    username: admin
+    password: PZ591JAZF7BAE7nWw06xsrYJGBQrFvbGbW3Z9JB0
+    project_name: admin
+    user_domain_name: Default
+    project_domain_name: Default
+  region_name: RegionOne
+  interface: internal
+  identity_api_version: 3
