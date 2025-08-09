@@ -1,7 +1,7 @@
 - name: Prepare venv and install openstacksdk
   hosts: src_cloud
   vars_files:
-    - playbook-vars.yml
+    - src-vars.yml
   tasks:
     - name: Ensure python3-venv and pip are installed
       apt:
@@ -15,11 +15,6 @@
       command: "python3 -m venv {{ venv_path }}"
       args:
         creates: "{{ venv_path }}/bin/activate"
-    
-    - name: Access CLI to project
-      shell: ". {{ openstack_path }}/admin-openrc.sh"
-      args:
-        executable: /bin/bash
 
     - name: Ensure openstacksdk is installed in virtualenv
       ansible.builtin.pip:
@@ -27,13 +22,25 @@
         virtualenv: "{{ venv_path }}"
         virtualenv_command: python3 -m venv
 
-- name: Export VM details
+- name: Determine boot type of VM
   hosts: src_cloud
   vars_files:
-    - playbook-vars.yml
     - src-vars.yml
-  vars:
-    ansible_python_interpreter: "{{ venv_path }}/bin/python"
+  tasks:
+    - name: Get VM details
+      openstack.cloud.server_info:
+        auth: "{{ cloud_config.auth }}"
+        name: "{{ vm_name }}"
+      register: vm_info
+
+    - name: Determine boot type of VM
+      set_fact:
+        image_boot: "{{ (vm_info.servers[0].image != {} and vm_info.servers[0].image is not none) | bool }}"
+
+- name: Execute the workload
+  hosts: src_cloud
+  vars_files:
+    - src-vars.yml
   tasks:
     - name: Shutdown the target VM
       openstack.cloud.server_action:
@@ -41,70 +48,104 @@
         action: stop
         server: "{{ vm_name }}"
         timeout: 200
-    
-    - name: Get VM details
-      openstack.cloud.server_info:
+
+    - name: Get all volumes info
+      openstack.cloud.volume_info:
         auth: "{{ cloud_config.auth }}"
-        name: "{{ vm_name }}"
-      register: vm_info
+      register: all_volumes
     
-    - name: Get network details
-      openstack.cloud.networks_info:
-        auth: "{{ cloud_config.auth }}"
-      register: network_info
-  
-- name: Detach volume from VM
-  hosts: src_cloud
-  vars_files:
-    - playbook-vars.yml
-    - src-vars.yml
-  vars:
-    ansible_python_interpreter: "{{ venv_path }}/bin/python"
-  tasks:
-    - name: Get VM details again
-      openstack.cloud.server_info:
-        auth: "{{ cloud_config.auth }}"
-        name: "{{ vm_name }}"
-      register: vm_info
-    
-    - name: Save VM info to file
-      copy:
-        dest: "/tmp/vm1_info.json"
-        content: "{{vm_info}}"
-    
-    - name: Extract VM mac address
+    - name: Filter external volumes (case vm is booted from image)
       set_fact:
-        vm_ip: "{{ vm_info.servers[0].addresses.internal[0].addr }}"
+        ex_volume_filtered_results: >-
+          {{ all_volumes.volumes
+            | selectattr('id', 'equalto', item.id)
+            | list }}
+      loop: "{{ vm_info.servers[0].attached_volumes }}"
+      when:
+        - vm_info.servers[0].attached_volumes | length > 0
+        - image_boot
 
-    - name: filter port related to vm ip
-      openstack.cloud.port_info:
+    - name: Detach the external volume attached (case vm is booted from image)
+      openstack.cloud.server_volume:
         auth: "{{ cloud_config.auth }}"
-        filters:
-          mac_address: "fa:16:3e:93:40:70"
-          status: ACTIVE
-      register: port_info
+        server: "{{ vm_name }}"
+        volume: "{{ item.id }}"
+        state: absent
+      loop: "{{ vm_info.servers[0].attached_volumes }}"
+      ignore_errors: true
+      when: 
+        - vm_info.servers[0].attached_volumes | length > 0
+        - image_boot is true
+        - not external_volume_info.skipped | default(false)
+
+    - name: Filter external volumes (case vm is booted from volume)
+      set_fact:
+        ex_volume_filtered_results: >-
+          {{ all_volumes.volumes
+            | selectattr('id', 'equalto', item.id)
+            | list }}
+      loop: "{{ vm_info.servers[0].attached_volumes[1:] }}"
+      when: 
+        - vm_info.servers[0].attached_volumes | length > 1
+        - not image_boot
+
+    
+    - name: Detach the external volume attached (case vm is booted from volume)
+      openstack.cloud.server_volume:
+        auth: "{{ cloud_config.auth }}"
+        server: "{{ vm_name }}"
+        volume: "{{ item.id }}"
+        state: absent
+      loop: "{{ vm_info.servers[0].attached_volumes[1:] }}"
+      ignore_errors: true
+      when: 
+        - vm_info.servers[0].attached_volumes | length > 1
+        - image_boot is false
+    
+    - name: Merge external volume filtered results
+      set_fact:
+        external_volumes_info:
+          volumes: "{{ (ex_volume_filtered_results.results | default([]))
+                      | map(attribute='attachments')
+                      | flatten
+                      | unique }}"
+    
+    - name: Save external volumes info
+      copy:
+        content: "{{ external_volumes_info | to_nice_yaml(indent=2) }}"
+        dest: "/tmp/{{ vm_info.servers[0].name }}/external_volumes_info.yaml"
+      when:
+        - external_volumes_info is defined
+        - not external_volumes_info.skipped | default(false)
+
+    - name: Create snapshot of os volume (case vm is booted from volume)
+      openstack.cloud.volume_snapshot:
+        auth: "{{ cloud_config.auth }}"
+        name: "volume-{{vm_info.servers[0].attached_volumes[0].id}}-snapshot"
+        volume: "{{vm_info.servers[0].attached_volumes[0].id}}"
+        state: present
+      when: 
+        - vm_info.servers[0].attached_volumes | length > 0
+        - image_boot is false
+    
+    - name: Get info about snapshot os volume (case vm is booted from volume)
+      openstack.cloud.volume_snapshot_info:
+        auth: "{{ cloud_config.auth }}"
+        name: "volume-{{vm_info.servers[0].attached_volumes[0].id}}-snapshot"
+      register: os_volume_snapshot_info
+      when:
+        - vm_info.servers[0].attached_volumes | length > 0
+        - image_boot is false
+    
+    - name: Save os volume snapshot info
+      copy:
+        content: "{{ os_volume_snapshot_info | to_nice_yaml(indent=2) }}"
+        dest: "/tmp/{{ vm_info.servers[0].name }}/os_volume_snapshot_info.yaml"
+      when:
+        - os_volume_snapshot_info is defined
+        - not os_volume_snapshot_info.skipped | default(false)
 
 
-    # - name: Detach all volumes (ignore root volume errors)
-    #   openstack.cloud.server_volume:
-    #     auth: "{{ cloud_config.auth }}"
-    #     server: "{{ vm_name }}"
-    #     volume: "{{ item.id }}"
-    #     state: absent
-    #   loop: "{{ vm_info.servers[0].attached_volumes }}"
-    #   ignore_errors: true
-    #   register: detach_results
-    #   when: vm_info.servers[0].attached_volumes | length > 0
-
-    # - name: Create snapshot of OS volume
-    #   openstack.cloud.volume_snapshot:
-    #     auth: "{{ cloud_config.auth }}"
-    #     volume: "{{ vm_info.servers[0].attached_volumes[0].id }}"
-    #     name: "{{ vm_name }}-os-snapshot-{{ ansible_date_time.epoch }}"
-    #     description: "OS volume snapshot for VM migration"
-    #     force: true
-    #   register: os_snapshot
-    #   when: vm_info.servers[0].attached_volumes | length > 0
     
         
 
