@@ -1,0 +1,29 @@
+floating_ips:
+- created_at: '2025-08-06T07:17:31Z'
+  description: ''
+  dns_domain: null
+  dns_name: null
+  fixed_ip_address: 10.10.2.187
+  floating_ip_address: 192.168.1.167
+  floating_network_id: b7556aba-63a1-40c0-b40e-7a7c2028c7b9
+  id: 0bf27d1e-7d2f-43b8-b70f-16637cc376ef
+  if_match: null
+  name: 192.168.1.167
+  port_details:
+    admin_state_up: true
+    device_id: db992a2e-6768-49c6-a5e6-74780395e114
+    device_owner: compute:nova
+    mac_address: fa:16:3e:93:40:70
+    name: ''
+    network_id: c226d30d-8ae4-463e-b8ba-f674b03618a6
+    status: ACTIVE
+  port_id: 3d527ed1-21e0-4623-a6db-f7d49e1ab1ef
+  project_id: 70352dd8c5d54702a480c15db40eaa54
+  qos_policy_id: null
+  revision_number: 10
+  router_id: 4e2f42ae-3929-45b7-8b20-ec7b4e747658
+  status: ACTIVE
+  subnet_id: null
+  tags: []
+  tenant_id: 70352dd8c5d54702a480c15db40eaa54
+  updated_at: '2025-08-07T06:56:25Z'

@@ -1,0 +1,27 @@
+routers:
+- availability_zone_hints: []
+  availability_zones:
+  - nova
+  created_at: '2025-08-06T07:12:13Z'
+  description: ''
+  enable_ndp_proxy: null
+  external_gateway_info:
+    enable_snat: true
+    external_fixed_ips:
+    - ip_address: 192.168.1.126
+      subnet_id: c6aedd5b-1b86-406e-a64b-e532554d1e42
+    network_id: b7556aba-63a1-40c0-b40e-7a7c2028c7b9
+  flavor_id: null
+  id: 4e2f42ae-3929-45b7-8b20-ec7b4e747658
+  if_match: null
+  is_admin_state_up: true
+  is_distributed: false
+  is_ha: false
+  name: router_adm
+  project_id: 70352dd8c5d54702a480c15db40eaa54
+  revision_number: 3
+  routes: []
+  status: ACTIVE
+  tags: []
+  tenant_id: 70352dd8c5d54702a480c15db40eaa54
+  updated_at: '2025-08-06T07:12:24Z'

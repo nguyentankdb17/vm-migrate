@@ -1,0 +1,115 @@
+changed: false
+failed: false
+servers:
+-   access_ipv4: 192.168.1.167
+    access_ipv6: ''
+    addresses:
+        internal:
+        -   OS-EXT-IPS-MAC:mac_addr: fa:16:3e:93:40:70
+            OS-EXT-IPS:type: fixed
+            addr: 10.10.2.187
+            version: 4
+        -   OS-EXT-IPS-MAC:mac_addr: fa:16:3e:93:40:70
+            OS-EXT-IPS:type: floating
+            addr: 192.168.1.167
+            version: 4
+        test:
+        -   OS-EXT-IPS-MAC:mac_addr: fa:16:3e:1d:8a:97
+            OS-EXT-IPS:type: fixed
+            addr: 10.10.3.99
+            version: 4
+    admin_password: null
+    attached_volumes:
+    -   attachment_id: null
+        bdm_id: null
+        delete_on_termination: false
+        device: null
+        id: 2698d3dc-aee9-494b-aaa9-126bf4ac9589
+        location: null
+        name: null
+        tag: null
+        volume_id: null
+    availability_zone: nova
+    block_device_mapping: null
+    compute_host: node2
+    config_drive: ''
+    created_at: '2025-08-07T03:11:02Z'
+    description: null
+    disk_config: AUTO
+    fault: null
+    flavor:
+        description: null
+        disk: 2
+        ephemeral: 0
+        extra_specs:
+            storage: CEPH
+        id: m1.tiny
+        is_disabled: null
+        is_public: true
+        location: null
+        name: m1.tiny
+        original_name: m1.tiny
+        ram: 512
+        rxtx_factor: null
+        swap: 0
+        vcpus: 1
+    flavor_id: null
+    has_config_drive: ''
+    host: null
+    host_id: 31a425f9d5fbfc95f9e377e82645069e2519c8d7c15c0c9e030e04f7
+    host_status: UP
+    hostname: vm1
+    hypervisor_hostname: node2
+    id: db992a2e-6768-49c6-a5e6-74780395e114
+    image: {}
+    image_id: null
+    instance_name: instance-00000008
+    is_locked: false
+    kernel_id: ''
+    key_name: keypair1
+    launch_index: 0
+    launched_at: '2025-08-07T03:11:18.000000'
+    links:
+    -   href: http://10.10.0.254:8774/v2.1/servers/db992a2e-6768-49c6-a5e6-74780395e114
+        rel: self
+    -   href: http://10.10.0.254:8774/servers/db992a2e-6768-49c6-a5e6-74780395e114
+        rel: bookmark
+    locked_reason: null
+    max_count: null
+    metadata: {}
+    min_count: null
+    name: vm1
+    networks: null
+    personality: null
+    pinned_availability_zone: nova
+    power_state: 4
+    progress: null
+    project_id: 70352dd8c5d54702a480c15db40eaa54
+    ramdisk_id: ''
+    reservation_id: r-b3na4fsp
+    root_device_name: /dev/vda
+    scheduler_hints: {}
+    security_groups:
+    -   name: https
+    -   name: default
+    -   name: default
+    server_groups: null
+    status: SHUTOFF
+    tags: []
+    task_state: null
+    terminated_at: null
+    trusted_image_certificates: null
+    updated_at: '2025-08-07T03:25:08Z'
+    user_data: null
+    user_id: 112c2bd46a214e03af1adaac9e774a46
+    vm_state: stopped
+    volumes:
+    -   attachment_id: null
+        bdm_id: null
+        delete_on_termination: false
+        device: null
+        id: 2698d3dc-aee9-494b-aaa9-126bf4ac9589
+        location: null
+        name: null
+        tag: null
+        volume_id: null

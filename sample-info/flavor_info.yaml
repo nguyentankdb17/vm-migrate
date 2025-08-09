@@ -1,0 +1,17 @@
+changed: false
+failed: false
+flavors:
+-   description: null
+    disk: 2
+    ephemeral: 0
+    extra_specs:
+        storage: CEPH
+    id: auto
+    is_disabled: false
+    is_public: true
+    name: m1.tiny
+    original_name: null
+    ram: 512
+    rxtx_factor: 1.0
+    swap: 0
+    vcpus: 1
