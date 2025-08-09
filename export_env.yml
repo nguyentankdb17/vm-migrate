@@ -22,7 +22,7 @@
         virtualenv: "{{ venv_path }}"
         virtualenv_command: python3 -m venv
 
-- name: Export flavor, image, keypair and security group info
+- name: Create info directory and export vm info
   hosts: src_cloud
   vars_files:
     - src-vars.yml
@@ -44,6 +44,11 @@
         content: "{{ vm_info | to_nice_yaml }}"
         dest: "/tmp/{{ vm_info.servers[0].name }}/vm_info.yaml"
 
+- name: Export flavor, image, keypair and security group info
+  hosts: src_cloud
+  vars_files:
+    - src-vars.yml
+  tasks:
     - name: Filter flavor info
       openstack.cloud.compute_flavor_info:
         auth: "{{ cloud_config.auth }}"
@@ -104,6 +109,7 @@
       openstack.cloud.security_group_info:
         auth: "{{ cloud_config.auth }}"
         name: "{{ item.name }}"
+        project_id: "{{ vm_info.servers[0].project_id }}"
       loop: "{{vm_info.servers[0].security_groups}}"
       register: sg_filtered_results
       when:
@@ -113,7 +119,7 @@
     - name: Merge filtered results
       set_fact:
         security_group_info:
-          security_groups: "{{ sg_filtered_results.results | map(attribute='security_groups') | flatten | unique}}"
+          security_groups: "{{ sg_filtered_results.results | map(attribute='security_groups') | flatten | unique(attribute='id') }}"
       when:
         - not sg_filtered_results.skipped | default(false)
 
@@ -131,12 +137,6 @@
   vars_files:
     - src-vars.yml
   tasks:
-    - name: Get VM details
-      openstack.cloud.server_info:
-        auth: "{{ cloud_config.auth }}"
-        name: "{{ vm_name }}"
-      register: vm_info
-
     - name: Extract all MAC addresses from all networks
       set_fact:
         vm_mac_addresses: >-
@@ -151,6 +151,7 @@
         auth: "{{ cloud_config.auth }}"
         filters:
           mac_address: "{{ item }}"
+          project_id: "{{ vm_info.servers[0].project_id }}"
           status: ACTIVE
       loop: "{{ vm_mac_addresses }}"
       register: port_filtered_results
@@ -168,6 +169,7 @@
       openstack.cloud.floating_ip_info:
         auth: "{{ cloud_config.auth }}"
         fixed_ip_address: "{{ item.fixed_ips[0].ip_address }}"
+        project_id: "{{ vm_info.servers[0].project_id }}"
       loop: "{{ports_info}}"
       register: fip_filtered_results
       when:
@@ -196,6 +198,7 @@
         auth: "{{ cloud_config.auth }}"
         filters:
           id: "{{ item.network_id }}"
+          project_id: "{{ vm_info.servers[0].project_id }}"
       loop: "{{ports_info}}"
       register: networks_filtered_results
       when:
@@ -207,6 +210,7 @@
         auth: "{{ cloud_config.auth }}"
         filters:
           id: "{{ item.floating_network_id }}"
+          project_id: "{{ vm_info.servers[0].project_id }}"
       loop: "{{floating_ips_info.floating_ips}}"
       register: fip_network_filtered_results
       when:
@@ -242,6 +246,7 @@
         auth: "{{ cloud_config.auth }}"
         filters:
           id: "{{ item.1 }}"
+          project_id: "{{ vm_info.servers[0].project_id }}"
       loop: "{{ networks_info.networks | subelements('subnet_ids') }}"
       register: subnets_filtered_results
       when:
@@ -256,6 +261,7 @@
       when:
         - subnets_filtered_results is defined
         - subnets_filtered_results | length > 0
+        - not subnets_filtered_results.skipped | default(false)
 
     - name: Save subnets info
       copy:
@@ -270,6 +276,7 @@
         auth: "{{ cloud_config.auth }}"
         filters:
           id: "{{ item.router_id }}"
+          project_id: "{{ vm_info.servers[0].project_id }}"
       loop: "{{floating_ips_info.floating_ips}}"
       register: routers_filtered_results
       when:
@@ -282,6 +289,7 @@
           routers: "{{ routers_filtered_results.results | map(attribute='routers') | flatten | unique }}"
       when:
         - routers_filtered_results is defined
+        - not routers_filtered_results.skipped | default(false)
         - routers_filtered_results | length > 0
 
     - name: Save router info
