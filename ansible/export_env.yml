@@ -1,3 +1,4 @@
+---
 - name: Prepare venv and install openstacksdk
   hosts: src_cloud
   vars_files:
@@ -103,7 +104,7 @@
         - vm_info.servers is defined
         - vm_info.servers | length > 0
         - vm_info.servers[0].key_name is defined
-        - vm_info.servers[0].key_name | length > 0
+        - vm_info.servers[0].key_name is not none
 
     - name: Save keypair info
       copy:

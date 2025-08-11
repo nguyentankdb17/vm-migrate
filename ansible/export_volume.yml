@@ -1,3 +1,4 @@
+---
 - name: Prepare venv and install openstacksdk
   hosts: src_cloud
   vars_files:
@@ -50,12 +51,12 @@
       delegate_to: localhost
       run_once: true
 
-    - name: Shutdown the target VM
-      openstack.cloud.server_action:
-        auth: "{{ cloud_config.auth }}"
-        action: stop
-        server: "{{ vm_name }}"
-        timeout: 200
+    # - name: Shutdown the target VM
+    #   openstack.cloud.server_action:
+    #     auth: "{{ cloud_config.auth }}"
+    #     action: stop
+    #     server: "{{ vm_name }}"
+    #     timeout: 200
 
     - name: Get all volumes info
       openstack.cloud.volume_info:
@@ -74,18 +75,18 @@
         - vm_info.servers[0].attached_volumes | length > 0
         - image_boot
 
-    - name: Detach the external volume attached (case vm is booted from image)
-      openstack.cloud.server_volume:
-        auth: "{{ cloud_config.auth }}"
-        server: "{{ vm_name }}"
-        volume: "{{ item.id }}"
-        state: absent
-      loop: "{{ vm_info.servers[0].attached_volumes }}"
-      ignore_errors: true
-      when: 
-        - vm_info.servers[0].attached_volumes | length > 0
-        - image_boot
-        - not external_volume_info.skipped | default(false)
+    # - name: Detach the external volume attached (case vm is booted from image)
+    #   openstack.cloud.server_volume:
+    #     auth: "{{ cloud_config.auth }}"
+    #     server: "{{ vm_name }}"
+    #     volume: "{{ item.id }}"
+    #     state: absent
+    #   loop: "{{ vm_info.servers[0].attached_volumes }}"
+    #   ignore_errors: true
+    #   when: 
+    #     - vm_info.servers[0].attached_volumes | length > 0
+    #     - image_boot
+    #     - not external_volume_info.skipped | default(false)
 
     - name: Filter external volumes (case vm is booted from volume)
       set_fact:
@@ -96,17 +97,17 @@
         - not image_boot
 
     
-    - name: Detach the external volume attached (case vm is booted from volume)
-      openstack.cloud.server_volume:
-        auth: "{{ cloud_config.auth }}"
-        server: "{{ vm_name }}"
-        volume: "{{ item.id }}"
-        state: absent
-      loop: "{{ vm_info.servers[0].attached_volumes[1:] }}"
-      ignore_errors: true
-      when: 
-        - vm_info.servers[0].attached_volumes | length > 1
-        - not image_boot
+    # - name: Detach the external volume attached (case vm is booted from volume)
+    #   openstack.cloud.server_volume:
+    #     auth: "{{ cloud_config.auth }}"
+    #     server: "{{ vm_name }}"
+    #     volume: "{{ item.id }}"
+    #     state: absent
+    #   loop: "{{ vm_info.servers[0].attached_volumes[1:] }}"
+    #   ignore_errors: true
+    #   when: 
+    #     - vm_info.servers[0].attached_volumes | length > 1
+    #     - not image_boot
     
     - name: Merge external volume filtered results
       set_fact:
@@ -129,9 +130,10 @@
     - name: Create snapshot of os volume (case vm is booted from volume)
       openstack.cloud.volume_snapshot:
         auth: "{{ cloud_config.auth }}"
-        name: "volume-{{vm_info.servers[0].attached_volumes[0].id}}-snapshot"
+        name: "os-volume-{{vm_name}}-snapshot"
         volume: "{{vm_info.servers[0].attached_volumes[0].id}}"
         state: present
+        force: true
       when: 
         - vm_info.servers[0].attached_volumes | length > 0
         - not image_boot

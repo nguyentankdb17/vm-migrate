@@ -21,3 +21,16 @@
         name: openstacksdk
         virtualenv: "{{ venv_path }}"
         virtualenv_command: python3 -m venv
+
+- name: Check if 
+
+- name: Configure networking
+  hosts: dst_cloud
+  vars_files:
+    - dst-vars.yml
+    - /tmp/networks.info.yaml
+  tasks:
+    - name: Check if same network existed
+
+
+- name: Configure flavor and start a new vm
