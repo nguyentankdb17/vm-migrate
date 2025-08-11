@@ -35,14 +35,18 @@
 
     - name: Create directory to store yaml files
       file:
-        path: /tmp/{{ vm_info.servers[0].name }}
+        path: /tmp/{{ vm_name }}
         state: directory
         mode: '0755'
+      delegate_to: localhost
+      run_once: true
 
     - name: Save info to YAML file
       copy:
-        content: "{{ vm_info | to_nice_yaml }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}/vm_info.yaml"
+        content: "{{ vm_info | to_nice_yaml(indent=2) }}"
+        dest: "/tmp/{{ vm_name }}/vm_info.yaml"
+      delegate_to: localhost
+      run_once: true
 
 - name: Export flavor, image, keypair and security group info
   hosts: src_cloud
@@ -61,11 +65,13 @@
 
     - name: Save flavor info
       copy:
-        content: "{{ flavor_info | to_nice_yaml }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}/flavor_info.yaml"
+        content: "{{ flavor_info | to_nice_yaml(indent=2) }}"
+        dest: "/tmp/{{ vm_name }}/flavor_info.yaml"
       when:
         - flavor_info is defined
         - not flavor_info.skipped | default(false)
+      delegate_to: localhost
+      run_once: true
 
     - name: Filter image info
       openstack.cloud.image_info:
@@ -80,11 +86,13 @@
 
     - name: Save image info
       copy:
-        content: "{{ image_info | to_nice_yaml }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}/image_info.yaml"
+        content: "{{ image_info | to_nice_yaml(indent=2) }}"
+        dest: "/tmp/{{ vm_name }}/image_info.yaml"
       when:
         - image_info is defined
         - not image_info.skipped | default(false)
+      delegate_to: localhost
+      run_once: true
 
     - name: Filter keypair info
       openstack.cloud.keypair_info:
@@ -99,11 +107,13 @@
 
     - name: Save keypair info
       copy:
-        content: "{{ keypair_info | to_nice_yaml }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}/keypair_info.yaml"
+        content: "{{ keypair_info | to_nice_yaml(indent=2) }}"
+        dest: "/tmp/{{ vm_name }}/keypair_info.yaml"
       when:
         - keypair_info is defined
         - not keypair_info.skipped | default(false)
+      delegate_to: localhost
+      run_once: true
 
     - name: Filter security groups matched
       openstack.cloud.security_group_info:
@@ -126,11 +136,12 @@
     - name: Save security group info
       copy:
         content: "{{ security_group_info | to_nice_yaml(indent=2) }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}/security_group_info.yaml"
+        dest: "/tmp/{{ vm_name }}/security_group_info.yaml"
       when:
         - security_group_info is defined
         - not security_group_info.skipped | default(false)
-
+      delegate_to: localhost
+      run_once: true
 
 - name: Export network components info
   hosts: src_cloud
@@ -187,11 +198,13 @@
     - name: Save floating ips info
       copy:
         content: "{{ floating_ips_info | to_nice_yaml(indent=2) }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}/floating_ips_info.yaml"
+        dest: "/tmp/{{ vm_name }}/floating_ips_info.yaml"
       when:
         - floating_ips_info is defined
         - floating_ips_info.floating_ips | length > 0
         - not floating_ips_info.skipped | default(false)
+      delegate_to: localhost
+      run_once: true
 
     - name: Filter networks matched with respective port
       openstack.cloud.networks_info:
@@ -236,10 +249,12 @@
     - name: Save networks info
       copy:
         content: "{{ networks_info | to_nice_yaml(indent=2) }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}/networks_info.yaml"
+        dest: "/tmp/{{ vm_name }}/networks_info.yaml"
       when:
         - networks_info is defined
         - not networks_info.skipped | default(false)
+      delegate_to: localhost
+      run_once: true
 
     - name: Filter subnets matched with respective network
       openstack.cloud.subnets_info:
@@ -266,10 +281,12 @@
     - name: Save subnets info
       copy:
         content: "{{ subnets_info | to_nice_yaml(indent=2) }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}/subnets_info.yaml"
+        dest: "/tmp/{{ vm_name }}/subnets_info.yaml"
       when:
         - subnets_info is defined
         - not subnets_info.skipped | default(false)
+      delegate_to: localhost
+      run_once: true
 
     - name: Filter router matched with respective floating ip
       openstack.cloud.routers_info:
@@ -295,7 +312,19 @@
     - name: Save router info
       copy:
         content: "{{ routers_info | to_nice_yaml(indent=2) }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}/routers_info.yaml"
+        dest: "/tmp/{{ vm_name }}/routers_info.yaml"
       when:
         - routers_info is defined
         - not routers_info.skipped | default(false)
+      delegate_to: localhost
+      run_once: true
+
+- name: Copy info yaml files to destination cloud
+  hosts: dst_cloud
+  vars_files:
+    - dst-vars.yml
+  tasks:
+    - name: Copy yaml files to destination
+      copy:
+        src: /tmp/{{ vm_name }}
+        dest: /tmp
