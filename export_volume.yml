@@ -42,6 +42,14 @@
   vars_files:
     - src-vars.yml
   tasks:
+    - name: Ensure directory to store yaml files is existed
+      file:
+        path: /tmp/{{ vm_name }}
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+      run_once: true
+
     - name: Shutdown the target VM
       openstack.cloud.server_action:
         auth: "{{ cloud_config.auth }}"
@@ -54,12 +62,13 @@
         auth: "{{ cloud_config.auth }}"
       register: all_volumes
     
+    - name: Init external volume list
+      set_fact:
+        ex_volume_filtered_results: []
+
     - name: Filter external volumes (case vm is booted from image)
       set_fact:
-        ex_volume_filtered_results: >-
-          {{ all_volumes.volumes
-            | selectattr('id', 'equalto', item.id)
-            | list }}
+        ex_volume_filtered_results: "{{ ex_volume_filtered_results + (all_volumes.volumes | selectattr('id', 'equalto', item.id) | list) }}"
       loop: "{{ vm_info.servers[0].attached_volumes }}"
       when:
         - vm_info.servers[0].attached_volumes | length > 0
@@ -75,15 +84,12 @@
       ignore_errors: true
       when: 
         - vm_info.servers[0].attached_volumes | length > 0
-        - image_boot is true
+        - image_boot
         - not external_volume_info.skipped | default(false)
 
     - name: Filter external volumes (case vm is booted from volume)
       set_fact:
-        ex_volume_filtered_results: >-
-          {{ all_volumes.volumes
-            | selectattr('id', 'equalto', item.id)
-            | list }}
+        ex_volume_filtered_results: "{{ ex_volume_filtered_results + (all_volumes.volumes | selectattr('id', 'equalto', item.id) | list) }}"
       loop: "{{ vm_info.servers[0].attached_volumes[1:] }}"
       when: 
         - vm_info.servers[0].attached_volumes | length > 1
@@ -100,23 +106,25 @@
       ignore_errors: true
       when: 
         - vm_info.servers[0].attached_volumes | length > 1
-        - image_boot is false
+        - not image_boot
     
     - name: Merge external volume filtered results
       set_fact:
         external_volumes_info:
-          volumes: "{{ (ex_volume_filtered_results.results | default([]))
-                      | map(attribute='attachments')
-                      | flatten
-                      | unique }}"
+          volumes: "{{ex_volume_filtered_results}}"
+      when: 
+        - ex_volume_filtered_results is defined
+        - ex_volume_filtered_results | length > 0
     
     - name: Save external volumes info
       copy:
         content: "{{ external_volumes_info | to_nice_yaml(indent=2) }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}/external_volumes_info.yaml"
+        dest: "/tmp/{{ vm_name }}/external_volumes_info.yaml"
       when:
         - external_volumes_info is defined
         - not external_volumes_info.skipped | default(false)
+      delegate_to: localhost
+      run_once: true
 
     - name: Create snapshot of os volume (case vm is booted from volume)
       openstack.cloud.volume_snapshot:
@@ -126,7 +134,7 @@
         state: present
       when: 
         - vm_info.servers[0].attached_volumes | length > 0
-        - image_boot is false
+        - not image_boot
     
     - name: Get info about snapshot os volume (case vm is booted from volume)
       openstack.cloud.volume_snapshot_info:
@@ -135,17 +143,27 @@
       register: os_volume_snapshot_info
       when:
         - vm_info.servers[0].attached_volumes | length > 0
-        - image_boot is false
+        - not image_boot
     
     - name: Save os volume snapshot info
       copy:
         content: "{{ os_volume_snapshot_info | to_nice_yaml(indent=2) }}"
-        dest: "/tmp/{{ vm_info.servers[0].name }}/os_volume_snapshot_info.yaml"
+        dest: "/tmp/{{ vm_name }}/os_volume_snapshot_info.yaml"
       when:
         - os_volume_snapshot_info is defined
         - not os_volume_snapshot_info.skipped | default(false)
+      delegate_to: localhost
+      run_once: true
 
-
+- name: Copy info yaml files to destination cloud
+  hosts: dst_cloud
+  vars_files:
+    - dst-vars.yml
+  tasks:
+    - name: Copy yaml files to destination
+      copy:
+        src: /tmp/{{ vm_name }}
+        dest: /tmp
     
         
 
