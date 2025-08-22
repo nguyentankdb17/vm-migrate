@@ -1,1 +1,1 @@
-# Tool for migrating virtual machines cross Openstack cluster
+# API for migrating virtual machines cross Openstack cluster

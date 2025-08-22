@@ -1,5 +1,8 @@
-vm_name: vm2
+vm_name: vmk
 venv_path: /home/nguyentan/venv
+os_migrate_data_dir: "/tmp/{{ vm_name }}"
+conversion_host_name: vmm
+conversion_host_ip: 10.10.1.90
 ansible_python_interpreter: "{{ venv_path }}/bin/python"
 cloud_config: 
   auth:

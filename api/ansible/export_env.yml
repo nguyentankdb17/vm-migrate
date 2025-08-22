@@ -33,6 +33,11 @@
         auth: "{{ cloud_config.auth }}"
         name: "{{ vm_name }}"
       register: vm_info
+    
+    - name: Fail if no vm matched
+      fail:
+        msg: "No virtual machines matched"
+      when: vm_info.servers | length < 1
 
     - name: Create directory to store yaml files
       file:
@@ -48,6 +53,9 @@
         dest: "/tmp/{{ vm_name }}/vm_info.yaml"
       delegate_to: localhost
       run_once: true
+      when:
+        - vm_info is defined
+        - vm_info | length > 0
 
 - name: Export flavor, image, keypair and security group info
   hosts: src_cloud
@@ -130,7 +138,10 @@
     - name: Merge filtered results
       set_fact:
         security_group_info:
-          security_groups: "{{ sg_filtered_results.results | map(attribute='security_groups') | flatten | unique(attribute='id') }}"
+          security_groups: "{{ sg_filtered_results.results 
+                            | map(attribute='security_groups') 
+                            | flatten 
+                            | unique(attribute='id') }}"
       when:
         - not sg_filtered_results.skipped | default(false)
 
@@ -157,6 +168,11 @@
       with_subelements:
         - "{{ vm_info.servers[0].addresses | dict2items }}"
         - value
+      when:
+        - vm_info is defined
+        - vm_info | length > 0
+        - vm_info.servers is defined
+        - vm_info.servers | length > 0
 
     - name: Filter all ports matched with respective MAC addresses
       openstack.cloud.port_info:
@@ -173,7 +189,10 @@
 
     - name: Merge filtered results
       set_fact:
-        ports_info: "{{ port_filtered_results.results | map(attribute='ports') | flatten | unique }}"
+        ports_info: "{{ port_filtered_results.results 
+                      | map(attribute='ports') 
+                      | flatten 
+                      | unique }}"
       when:
         - not port_filtered_results.skipped | default(false)
     
@@ -191,10 +210,14 @@
     - name: Merge filtered results
       set_fact:
         floating_ips_info:
-          floating_ips: "{{ fip_filtered_results.results | map(attribute='floating_ips') | flatten | unique }}"
+          floating_ips: "{{ fip_filtered_results.results 
+                          | map(attribute='floating_ips') 
+                          | flatten 
+                          | unique }}"
       when:
         - fip_filtered_results is defined
         - fip_filtered_results | length > 0
+        - not fip_filtered_results.skipped | default(false)
 
     - name: Save floating ips info
       copy:
@@ -238,14 +261,19 @@
           networks: >-
             {{
               (
-                (networks_filtered_results.results | map(attribute='networks') | flatten | unique | default([]))
+                (networks_filtered_results.results 
+                | map(attribute='networks') 
+                | flatten | unique | default([]))
                 +
-                (fip_network_filtered_results.results | map(attribute='networks') | flatten | unique | default([]))
+                (fip_network_filtered_results.results 
+                | map(attribute='networks') 
+                | flatten | unique | default([]))
               )
             }}
       when:
         - networks_filtered_results is defined
         - fip_network_filtered_results is defined
+        - not fip_network_filtered_results.skipped | default(false)
 
     - name: Save networks info
       copy:
@@ -270,14 +298,34 @@
         - networks_info.networks is defined
         - networks_info.networks | length > 0
 
-    - name: Merge filtered results
+    - name: Merge filtered results thành list subnet
       set_fact:
-        subnets_info:
-          subnets: "{{(subnets_filtered_results.results | map(attribute='subnets') | flatten | unique | default([]))}}"
+        subnets_list: >-
+          {{
+            subnets_filtered_results.results
+            | map(attribute='subnets')
+            | flatten
+            | unique
+            | list
+          }}
       when:
+        - not subnets_filtered_results.skipped | default(false)
         - subnets_filtered_results is defined
         - subnets_filtered_results | length > 0
-        - not subnets_filtered_results.skipped | default(false)
+
+    - name: Thêm network_name vào từng subnet
+      set_fact:
+        subnets_info:
+          subnets: "{{ (subnets_info.subnets | default([])) + 
+                    [ item | combine({'network_name': (networks_info.networks 
+                    | selectattr('id','equalto', item.network_id) 
+                    | map(attribute='name') 
+                    | first)}) ] }}"
+      loop: "{{ subnets_list }}"
+      loop_control:
+        loop_var: item
+      when:
+        - not subnets_list.skipped | default(false)
 
     - name: Save subnets info
       copy:
@@ -304,7 +352,10 @@
     - name: Merge filtered results
       set_fact:
         routers_info:
-          routers: "{{ routers_filtered_results.results | map(attribute='routers') | flatten | unique }}"
+          routers: "{{ routers_filtered_results.results 
+                      | map(attribute='routers') 
+                      | flatten 
+                      | unique }}"
       when:
         - routers_filtered_results is defined
         - not routers_filtered_results.skipped | default(false)
@@ -319,6 +370,12 @@
         - not routers_info.skipped | default(false)
       delegate_to: localhost
       run_once: true
+
+    - name: Export myrouter into /opt/os-migrate/routers.yml
+      os_migrate.os_migrate.export_router:
+        auth: "{{ cloud_config.auth }}"
+        path: "/tmp/{{ vm_name }}/routers.yml"
+        name: router_adm
 
 - name: Copy info yaml files to destination cloud
   hosts: dst_cloud

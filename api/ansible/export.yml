@@ -1,0 +1,151 @@
+---
+- name: Prepare venv and install openstacksdk
+  hosts: src_cloud
+  vars_files:
+    - src-vars.yml
+  tasks:
+    - name: Ensure python3-venv and pip are installed
+      apt:
+        name:
+          - python3-venv
+          - python3-pip
+        state: present
+      when: ansible_os_family | default('') == "Debian"
+
+    - name: Create Python virtual environment if not exists
+      command: "python3 -m venv {{ venv_path }}"
+      args:
+        creates: "{{ venv_path }}/bin/activate"
+
+    - name: Ensure openstacksdk is installed in virtualenv
+      ansible.builtin.pip:
+        name: openstacksdk
+        virtualenv: "{{ venv_path }}"
+        virtualenv_command: python3 -m venv
+
+
+- name: Create info directory and export vm info
+  hosts: src_cloud
+  vars_files:
+    - src-vars.yml
+  tasks:
+    - name: Get VM details
+      openstack.cloud.server_info:
+        auth: "{{ cloud_config.auth }}"
+        name: "{{ vm_name }}"
+      register: vm_info
+    
+    - name: Fail if no vm matched
+      fail:
+        msg: "No virtual machines matched"
+      when: vm_info.servers | length < 1
+
+    - name: Create directory to store yaml files
+      file:
+        path: /tmp/{{ vm_name }}
+        state: directory
+        mode: '0755'
+      delegate_to: dst_cloud
+      run_once: true
+
+    - name: Save info to YAML file
+      copy:
+        content: "{{ vm_info | to_nice_yaml(indent=2) }}"
+        dest: "/tmp/{{ vm_name }}/vm_info.yaml"
+      delegate_to: localhost
+      run_once: true
+      when:
+        - vm_info is defined
+        - vm_info | length > 0
+
+- name: Export network configuration
+  hosts: src_cloud
+  vars_files:
+    - src-vars.yml
+  tasks:
+    - name: scan available networks
+      openstack.cloud.networks_info:
+        auth: "{{ cloud_config.auth }}"
+      register: networks_info
+
+    - name: create id-name pairs of networks to export
+      ansible.builtin.set_fact:
+        export_networks_ids_names: "{{ (
+          networks_info.networks
+            | json_query('[*].{name: name, id: id}')
+            | sort(attribute='id') ) }}"
+
+    - name: export network
+      os_migrate.os_migrate.export_network:
+        auth: "{{ cloud_config.auth }}"
+        path: "/tmp/{{ vm_name }}/networks.yml"
+        name: "{{ item['id'] }}"
+      loop: "{{ export_networks_ids_names }}"
+
+    - name: scan available routers
+      os_migrate.os_migrate.os_routers_info:
+        auth: "{{ cloud_config.auth }}"
+      register: src_routers_info
+
+    - name: create id-name pairs of routers to export
+      ansible.builtin.set_fact:
+        export_routers_ids_names: "{{ (
+          src_routers_info.openstack_routers
+            | json_query('[*].{name: name, id: id}')
+            | sort(attribute='id') ) }}"
+
+    - name: export routers
+      os_migrate.os_migrate.export_router:
+        auth: "{{ cloud_config.auth }}"
+        path: "/tmp/{{ vm_name }}/routers.yml"
+        name: "{{ item['id'] }}"
+      loop: "{{ export_routers_ids_names }}"
+
+    - name: scan available subnets
+      openstack.cloud.subnets_info:
+        auth: "{{ cloud_config.auth }}"
+      register: src_subnets_info
+
+    - name: create id-name pairs of subnets to export
+      ansible.builtin.set_fact:
+        export_subnets_ids_names: "{{ (
+          src_subnets_info.subnets
+            | json_query('[*].{name: name, id: id}')
+            | sort(attribute='id') ) }}"
+
+    - name: export subnet
+      os_migrate.os_migrate.export_subnet:
+        auth: "{{ cloud_config.auth }}"
+        path: "{{ os_migrate_data_dir }}/subnets.yml"
+        name: "{{ item['id'] }}"
+      loop: "{{ export_subnets_ids_names }}"
+
+    # - name: scan available flavors
+    #   openstack.cloud.compute_flavor_info:
+    #     auth: "{{ cloud_config.auth }}"
+    #   register: src_flavors_info
+
+    # - name: create id-name pairs of flavors to export
+    #   ansible.builtin.set_fact:
+    #     export_flavors_ids_names: "{{ (
+    #       src_flavors_info.flavors
+    #         | json_query('[*].{name: name, id: id}')
+    #         | sort(attribute='id') ) }}"
+
+    # - name: export flavor
+    #   os_migrate.os_migrate.export_flavor:
+    #     auth: "{{ cloud_config.auth }}"
+    #     path: "{{ os_migrate_data_dir }}/flavors.yml"
+    #     name: "{{ item['id'] }}"
+    #   loop: "{{ export_flavors_ids_names }}"
+
+- name: Copy info yaml files to destination cloud
+  hosts: dst_cloud
+  vars_files:
+    - dst-vars.yml
+  tasks:
+    - name: Copy yaml files to destination
+      copy:
+        src: /tmp/{{ vm_name }}
+        dest: /tmp
+    

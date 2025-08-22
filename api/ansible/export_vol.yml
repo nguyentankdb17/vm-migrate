@@ -1,0 +1,105 @@
+---
+- name: Prepare venv and install openstacksdk
+  hosts: src_cloud
+  vars_files:
+    - src-vars.yml
+  tasks:
+    - name: Ensure python3-venv and pip are installed
+      apt:
+        name:
+          - python3-venv
+          - python3-pip
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Create Python virtual environment if not exists
+      command: "python3 -m venv {{ venv_path }}"
+      args:
+        creates: "{{ venv_path }}/bin/activate"
+
+    - name: Ensure openstacksdk is installed in virtualenv
+      ansible.builtin.pip:
+        name: openstacksdk
+        virtualenv: "{{ venv_path }}"
+        virtualenv_command: python3 -m venv
+
+- name: Determine boot type of VM
+  hosts: src_cloud
+  vars_files:
+    - src-vars.yml
+  tasks:
+    - name: Get VM details
+      openstack.cloud.server_info:
+        auth: "{{ cloud_config.auth }}"
+        name: "{{ vm_name }}"
+      register: vm_info
+
+    - name: Determine boot type of VM
+      set_fact:
+        image_boot: "{{ (vm_info.servers[0].image != {} and vm_info.servers[0].image is not none) | bool }}"
+
+- name: Execute the workload (case VM is booted from image)
+  hosts: src_cloud
+  vars_files:
+    - src-vars.yml
+  when: image_boot
+  tasks:
+    - name: Ensure directory to store yaml files is existed
+      file:
+        path: /tmp/{{ vm_name }}
+        state: directory
+        mode: '0755'
+      delegate_to: dst_cloud
+      run_once: true
+
+    - name: Shut off the instance
+      openstack.cloud.server_action:
+        auth: "{{ cloud_config.auth }}"
+        action: stop
+        server: "{{ vm_name }}"
+        timeout: 200
+
+    - name: Get details of all volumes attached
+      openstack.cloud.volume_info:
+        auth: "{{ cloud_config.auth }}"
+
+    - name: Detach all volumes
+
+    - name: Attach volumes to conversion host
+
+- name: Execute the workload (case VM is booted from volume)
+  hosts: src_cloud
+  vars_files:
+    - src-vars.yml
+  when: not image_boot
+  tasks:
+    - name: Ensure directory to store yaml files is existed
+      file:
+        path: /tmp/{{ vm_name }}
+        state: directory
+        mode: '0755'
+      delegate_to: dst_cloud
+      run_once: true
+
+    - name: Shut off the instance
+      openstack.cloud.server_action:
+        auth: "{{ cloud_config.auth }}"
+        action: stop
+        server: "{{ vm_name }}"
+        timeout: 200
+
+    - name: Get details of all volumes attached
+      openstack.cloud.volume_info:
+        auth: "{{ cloud_config.auth }}"
+
+    - name: Detach all external volumes
+
+    - name: Create os volume snapshot
+
+    - name: Create os snapshot volume base on snapshot
+
+    - name: Attach volumes to conversion host
+
+
+
+

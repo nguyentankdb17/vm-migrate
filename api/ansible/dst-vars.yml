@@ -1,12 +1,15 @@
-vm_name: vm2
+vm_name: vmk
+os_migrate_data_dir: "/tmp/{{ vm_name }}"
 venv_path: /home/nguyentan/venv
+conversion_host_name: vmn
+conversion_host_ip: 10.10.1.65
 ansible_python_interpreter: "{{ venv_path }}/bin/python"
 cloud_config: 
   auth:
     auth_url: http://10.10.10.254:5000
     username: admin
     password: xzdp1rthzeTFLmq4f9vMRE8b26bmaWNJWunUszoJ
-    project_name: demo
+    project_name: admin
     user_domain_name: Default
     project_domain_name: Default
   region_name: RegionOne

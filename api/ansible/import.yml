@@ -1,0 +1,65 @@
+---
+- name: Prepare venv and install openstacksdk
+  hosts: dst_cloud
+  vars_files:
+    - dst-vars.yml
+  tasks:
+    - name: Ensure python3-venv and pip are installed
+      apt:
+        name:
+          - python3-venv
+          - python3-pip
+        state: present
+      when: ansible_os_family | default('') == "Debian"
+
+    - name: Create Python virtual environment if not exists
+      command: "python3 -m venv {{ venv_path }}"
+      args:
+        creates: "{{ venv_path }}/bin/activate"
+
+    - name: Ensure openstacksdk is installed in virtualenv
+      ansible.builtin.pip:
+        name: openstacksdk
+        virtualenv: "{{ venv_path }}"
+        virtualenv_command: python3 -m venv
+
+- name: Import network component
+  hosts: dst_cloud
+  vars_files:
+    - dst-vars.yml
+  tasks:
+    - name: read networks resource file
+      os_migrate.os_migrate.read_resources:
+        path: "/tmp/{{ vm_name }}/networks.yml"
+      register: read_networks
+      delegate_to: dst_cloud
+    
+    - name: import network
+      os_migrate.os_migrate.import_network:
+        auth: "{{ cloud_config.auth }}"
+        data: "{{ item }}"
+      loop: "{{ read_networks.resources }}"
+
+    - name: read subnets resource file
+      os_migrate.os_migrate.read_resources:
+        path: "{{ os_migrate_data_dir }}/subnets.yml"
+      register: read_subnets
+
+    - name: import subnets
+      os_migrate.os_migrate.import_subnet:
+        auth: "{{ cloud_config.auth }}"
+        data: "{{ item }}"
+      loop: "{{ read_subnets.resources }}"
+
+    - name: read routers resource file
+      os_migrate.os_migrate.read_resources:
+        path: "/tmp/{{ vm_name }}/routers.yml"
+      register: read_routers
+      delegate_to: dst_cloud
+    
+    - name: import router
+      os_migrate.os_migrate.import_router:
+        auth: "{{ cloud_config.auth }}"
+        data: "{{ item }}"
+      loop: "{{ read_routers.resources }}"
+
